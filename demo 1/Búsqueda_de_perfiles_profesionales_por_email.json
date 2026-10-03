@@ -1,0 +1,693 @@
+{
+  "name": "Búsqueda de perfiles profesionales por email",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "maxResults": 1,
+        "filters": {
+          "q": "in:inbox",
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "75c872bd-3ef7-4790-9f31-ae489c3792e3",
+      "name": "Nuevo email de petición",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -80,
+        400
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "message_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "from_email",
+              "value": "={{ $json.from.value[0].address }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "subject",
+              "value": "={{ $json.subject || \"(sin asunto)\" }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "body",
+              "value": "={{ ($json.text || \"\").slice(0, 8000) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f1d3099a-c1d0-46b4-8046-af206215e79d",
+      "name": "Extraer datos del email",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Fecha de hoy: {{ $now.toFormat(\"yyyy-MM-dd\") }}\n\nAsunto: {{ $json.subject }}\n\nCuerpo del email:\n\"\"\"\n{{ $json.body }}\n\"\"\"",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Eres un analista de selección. Conviertes una petición de perfiles profesionales recibida por email en criterios de búsqueda estructurados.\n\nDevuelve SOLO estos campos:\n- role: puesto/rol pedido (por ejemplo \"Backend Developer\") SOLO si el email lo menciona o se deduce sin ambigüedad. Si no, null.\n- required_skills: lista de skills técnicas obligatorias, una por elemento (nunca combines dos skills en un mismo texto). Usa el nombre técnico estándar (ej. \"bases de datos\" -> \"SQL\"). Lista vacía si no se piden skills.\n- minimum_experience: años mínimos de experiencia como número SOLO si se indican explícitamente. Si no, null.\n- location: ciudad/ubicación SOLO si se menciona. Si no, null.\n- availability: \"immediate\" si piden incorporación inmediata / lo antes posible / urgente; una fecha \"YYYY-MM-DD\" si indican una fecha concreta; null si no se menciona.\n- number_of_profiles: número de perfiles solicitados; 1 si no se indica.\n\nReglas: no inventes requisitos que no aparezcan en el email. Si algo es ambiguo o no se especifica, usa null. No incluyas explicaciones."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "64c9f7b1-45bd-4f08-9d08-ccba69f8af2f",
+      "name": "Analizar petición con IA",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        448,
+        400
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5.4-mini",
+          "cachedResultName": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "991a86be-87bc-492c-aeea-49f0a8279966",
+      "name": "Modelo IA (análisis)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        464,
+        624
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\"type\":\"object\",\"properties\":{\"role\":{\"type\":[\"string\",\"null\"]},\"required_skills\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"minimum_experience\":{\"type\":[\"number\",\"null\"]},\"location\":{\"type\":[\"string\",\"null\"]},\"availability\":{\"type\":[\"string\",\"null\"]},\"number_of_profiles\":{\"type\":\"number\"}},\"required\":[\"role\",\"required_skills\",\"minimum_experience\",\"location\",\"availability\",\"number_of_profiles\"]}"
+      },
+      "id": "751f0647-1fba-47f7-a151-23826031717e",
+      "name": "Formato JSON de criterios",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        592,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "error_message",
+              "value": "={{ (() => { const e = $input.first().json[\"error\"]; return (e && e.message) || e || \"Error desconocido\"; })() }}",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "from_email",
+              "value": "={{ $(\"Extraer datos del email\").first().json.from_email }}",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "subject",
+              "value": "={{ $(\"Extraer datos del email\").first().json.subject }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c9ea23ae-ce0c-42ab-bfa4-7a7f1d114e9a",
+      "name": "Preparar aviso de error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1328,
+        800
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "sendTo": "PEGA_AQUI_EL_EMAIL_DEL_ADMINISTRADOR",
+        "subject": "=[Error] Búsqueda de perfiles: {{ $json.subject }}",
+        "emailType": "text",
+        "message": "=No se ha podido procesar una petición de perfiles.\n\nRemitente: {{ $json.from_email }}\nAsunto: {{ $json.subject }}\nError: {{ $json.error_message }}\nEjecución: {{ $execution.id }}\n\nRevisa la ejecución en n8n y responde manualmente si es necesario.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f1e68b59-cf9a-4649-a242-a2b390fbd9c8",
+      "name": "Notificar error al administrador",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1552,
+        800
+      ],
+      "webhookId": "665d47c9-81a9-4c8d-aeb4-364e9bade1cf",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "role",
+              "value": "={{ $json.output.role ? String($json.output.role).trim() : null }}",
+              "type": "string"
+            },
+            {
+              "id": "n2",
+              "name": "required_skills",
+              "value": "={{ ($json.output.required_skills || []).map(s => String(s).trim()).filter(s => s.length > 0) }}",
+              "type": "array"
+            },
+            {
+              "id": "n3",
+              "name": "minimum_experience",
+              "value": "={{ $json.output.minimum_experience ?? null }}",
+              "type": "number"
+            },
+            {
+              "id": "n4",
+              "name": "location",
+              "value": "={{ $json.output.location ? String($json.output.location).trim() : null }}",
+              "type": "string"
+            },
+            {
+              "id": "n5",
+              "name": "availability",
+              "value": "={{ $json.output.availability || null }}",
+              "type": "string"
+            },
+            {
+              "id": "n6",
+              "name": "number_of_profiles",
+              "value": "={{ Math.max(1, Number($json.output.number_of_profiles) || 1) }}",
+              "type": "number"
+            },
+            {
+              "id": "n7",
+              "name": "p_skills",
+              "value": "={{ (($json.output.required_skills || []).map(s => String(s).replace(/[|,]/g, \" \").trim().toLowerCase()).filter(s => s.length > 0).join(\"|\")) || \"__ANY__\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n8",
+              "name": "p_role",
+              "value": "={{ $json.output.role ? String($json.output.role).replace(/,/g, \" \").trim() : \"__ANY__\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n9",
+              "name": "p_min_exp",
+              "value": "={{ $json.output.minimum_experience ?? -1 }}",
+              "type": "string"
+            },
+            {
+              "id": "n10",
+              "name": "p_location",
+              "value": "={{ $json.output.location ? String($json.output.location).split(\",\")[0].trim() : \"__ANY__\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f4ea0877-e2bc-4700-8d3f-ece0ec3001f9",
+      "name": "Normalizar criterios",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH p AS (\n  SELECT\n    CASE WHEN $1 = '__ANY__' THEN ARRAY[]::text[] ELSE string_to_array(lower($1), '|') END AS skills,\n    NULLIF($2, '__ANY__') AS role,\n    ($3)::numeric AS min_exp,\n    NULLIF($4, '__ANY__') AS location\n)\nSELECT e.employee_id, e.name, e.role, e.skills, e.years_experience,\n       e.availability_date, e.availability_status, e.location, e.current_project\nFROM employees e CROSS JOIN p\nWHERE ARRAY(SELECT lower(trim(s)) FROM unnest(e.skills) AS s) @> p.skills\n  AND (p.role IS NULL OR e.role ILIKE '%' || p.role || '%')\n  AND (p.min_exp < 0 OR e.years_experience >= p.min_exp)\n  AND (p.location IS NULL OR e.location ILIKE '%' || p.location || '%')\nORDER BY e.years_experience DESC;",
+        "options": {
+          "queryReplacement": "={{ $json.p_skills }},{{ $json.p_role }},{{ $json.p_min_exp }},{{ $json.p_location }}"
+        }
+      },
+      "id": "9a1f1d97-06ff-4730-aedf-c8aece249a2a",
+      "name": "Buscar candidatos en Neon",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        944,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const criteria = $('Normalizar criterios').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.employee_id !== undefined && r.employee_id !== null);\n\nconst DAY = 24 * 60 * 60 * 1000;\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\n// Fecha limite de incorporacion segun la peticion\nlet target = null;\nif (criteria.availability === 'immediate') {\n  target = new Date(today.getTime() + 14 * DAY); // \"lo antes posible\" = disponible en los proximos 14 dias\n} else if (criteria.availability && /^\\d{4}-\\d{2}-\\d{2}$/.test(criteria.availability)) {\n  target = new Date(criteria.availability + 'T00:00:00');\n}\n\nfunction toDate(v) {\n  if (!v) return null;\n  const d = new Date(v);\n  if (isNaN(d.getTime())) return null;\n  d.setHours(0, 0, 0, 0);\n  return d;\n}\nfunction fmt(d) {\n  if (!d) return null;\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, '0');\n  const dd = String(d.getDate()).padStart(2, '0');\n  return y + '-' + m + '-' + dd;\n}\n\nconst evaluated = [];\nfor (const r of rows) {\n  const status = String(r.availability_status || '').trim().toLowerCase();\n  const busy = status === 'busy';\n  const date = toDate(r.availability_date);\n  let available;\n  if (busy) {\n    // Una persona \"busy\" solo cuenta si tiene fecha de disponibilidad dentro del plazo\n    available = date !== null && (target === null || date <= target);\n  } else {\n    available = date === null || target === null || date <= target;\n  }\n  if (!available) continue;\n  const effective = date && date > today ? date : today;\n  evaluated.push({ r, busy, effective });\n}\n\n// Orden: disponibilidad (antes primero, no-busy primero) y despues anos de experiencia\nevaluated.sort((a, b) => {\n  if (a.effective.getTime() !== b.effective.getTime()) return a.effective - b.effective;\n  if (a.busy !== b.busy) return a.busy ? 1 : -1;\n  return Number(b.r.years_experience || 0) - Number(a.r.years_experience || 0);\n});\n\nconst matches = evaluated.slice(0, 5).map(({ r, effective }) => ({\n  employee_id: r.employee_id,\n  name: r.name,\n  role: r.role,\n  skills: Array.isArray(r.skills) ? r.skills : [],\n  years_experience: r.years_experience,\n  availability_status: r.availability_status,\n  availability_date: fmt(toDate(r.availability_date)),\n  available_from: fmt(effective),\n  location: r.location,\n}));\n\nif (matches.length === 0) {\n  return [{ json: { matches: [], reason: 'No se ha encontrado ningún perfil que cumpla todos los requisitos.', criteria } }];\n}\nreturn [{ json: { matches, total_found: matches.length, requested: criteria.number_of_profiles, criteria } }];"
+      },
+      "id": "02d52bf6-70eb-4e08-872f-8c7496911a70",
+      "name": "Filtrar y ordenar candidatos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.matches.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "09649a17-eea3-469a-8fec-a4a5bd5b5b9b",
+      "name": "¿Hay candidatos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1552,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Petición original:\n\"\"\"\n{{ $(\"Extraer datos del email\").first().json.body }}\n\"\"\"\n\nCriterios interpretados:\n{{ JSON.stringify($json.criteria) }}\n\nPerfiles solicitados: {{ $json.requested }}\nPerfiles encontrados: {{ $json.total_found }}\n\nCandidatos (datos de la base de datos):\n{{ JSON.stringify($json.matches, null, 2) }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Redactas en español emails profesionales de respuesta a peticiones de perfiles.\n\nEl email debe:\n- saludar y agradecer la petición;\n- indicar cuántos perfiles se han encontrado;\n- presentar cada candidato numerado con: nombre, rol, años de experiencia, skills relevantes, disponibilidad (fecha en formato \"1 de octubre de 2026\"; si available_from es hoy o antes, \"Disponible de inmediato\") y ubicación;\n- explicar brevemente por qué encaja cada uno, basándote SOLO en los criterios y en sus datos;\n- si se encontraron menos perfiles de los solicitados, indicarlo;\n- ofrecer ampliar la búsqueda o revisar otros perfiles;\n- despedirse con \"Un saludo.\"\n\nReglas estrictas: usa ÚNICAMENTE los datos proporcionados de los candidatos. No inventes candidatos, datos, proyectos, formación ni información de contacto. No incluyas current_project ni employee_id. Devuelve solo el cuerpo del email en texto plano, sin asunto ni formato markdown."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "87e77726-e7b8-4e3a-9be5-f39c89aa5fe3",
+      "name": "Redactar respuesta con IA",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1776,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5.4-mini",
+          "cachedResultName": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "4c65b386-18dc-41e4-8135-a302fbc17161",
+      "name": "Modelo IA (redacción)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1856,
+        224
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $(\"Extraer datos del email\").first().json.message_id }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyToSenderOnly": true
+        }
+      },
+      "id": "ddd2b08a-f101-47a5-a242-76736814a8a2",
+      "name": "Enviar respuesta al remitente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2128,
+        256
+      ],
+      "webhookId": "62874804-3e30-4d94-8b9f-6d5125bc09ed",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m1",
+              "name": "text",
+              "value": "=Hola,\n\nGracias por tu petición.\n\n{{ $json.reason }}\n\nCriterios aplicados en la búsqueda:\n- Rol: {{ $json.criteria.role || \"no especificado\" }}\n- Skills obligatorias: {{ $json.criteria.required_skills.length ? $json.criteria.required_skills.join(\", \") : \"no especificadas\" }}\n- Experiencia mínima: {{ $json.criteria.minimum_experience !== null && $json.criteria.minimum_experience !== undefined ? $json.criteria.minimum_experience + \" años\" : \"no especificada\" }}\n- Ubicación: {{ $json.criteria.location || \"no especificada\" }}\n- Disponibilidad: {{ $json.criteria.availability === \"immediate\" ? \"inmediata\" : ($json.criteria.availability || \"no especificada\") }}\n\nSi lo deseas, podemos flexibilizar alguno de los requisitos y ampliar la búsqueda.\n\nUn saludo.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a18b95c5-92e7-4b07-be0e-c8231434030d",
+      "name": "Mensaje sin candidatos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1840,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Nuevo email de petición": {
+      "main": [
+        [
+          {
+            "node": "Extraer datos del email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer datos del email": {
+      "main": [
+        [
+          {
+            "node": "Analizar petición con IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar petición con IA": {
+      "main": [
+        [
+          {
+            "node": "Normalizar criterios",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar aviso de error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo IA (análisis)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analizar petición con IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formato JSON de criterios": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Analizar petición con IA",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar aviso de error": {
+      "main": [
+        [
+          {
+            "node": "Notificar error al administrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar criterios": {
+      "main": [
+        [
+          {
+            "node": "Buscar candidatos en Neon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar candidatos en Neon": {
+      "main": [
+        [
+          {
+            "node": "Filtrar y ordenar candidatos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar aviso de error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar y ordenar candidatos": {
+      "main": [
+        [
+          {
+            "node": "¿Hay candidatos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay candidatos?": {
+      "main": [
+        [
+          {
+            "node": "Redactar respuesta con IA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensaje sin candidatos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar respuesta con IA": {
+      "main": [
+        [
+          {
+            "node": "Enviar respuesta al remitente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo IA (redacción)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Redactar respuesta con IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar respuesta al remitente": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Preparar aviso de error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje sin candidatos": {
+      "main": [
+        [
+          {
+            "node": "Enviar respuesta al remitente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "8da1c7f2-e7f7-461c-9a40-60b230dfab82",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [
+    {
+      "id": "e84b3af5-dc3b-4185-8d70-f19fe226c154",
+      "name": "Interpretar la petición",
+      "nodeIds": [
+        "f1d3099a-c1d0-46b4-8046-af206215e79d",
+        "64c9f7b1-45bd-4f08-9d08-ccba69f8af2f",
+        "991a86be-87bc-492c-aeea-49f0a8279966",
+        "751f0647-1fba-47f7-a151-23826031717e"
+      ],
+      "description": "Toma remitente, asunto y cuerpo del email y la IA los convierte en criterios: rol, skills, experiencia, ubicación"
+    },
+    {
+      "id": "1f27c695-11ca-4662-a9e6-52f001a61b52",
+      "name": "Consultar base de empleados",
+      "nodeIds": [
+        "f4ea0877-e2bc-4700-8d3f-ece0ec3001f9",
+        "9a1f1d97-06ff-4730-aedf-c8aece249a2a"
+      ],
+      "description": "Busca en Neon empleados con TODAS las skills pedidas y, si se indican, rol, experiencia mínima y ubicación"
+    },
+    {
+      "id": "9b8ef72f-542b-4d36-9224-f7311798fda6",
+      "name": "Seleccionar y responder",
+      "nodeIds": [
+        "02d52bf6-70eb-4e08-872f-8c7496911a70",
+        "09649a17-eea3-469a-8fec-a4a5bd5b5b9b",
+        "87e77726-e7b8-4e3a-9be5-f39c89aa5fe3",
+        "4c65b386-18dc-41e4-8135-a302fbc17161",
+        "a18b95c5-92e7-4b07-be0e-c8231434030d",
+        "ddd2b08a-f101-47a5-a242-76736814a8a2"
+      ],
+      "description": "Filtra por disponibilidad, ordena y elige hasta 5 perfiles; la IA redacta la respuesta y se envía al remitente"
+    },
+    {
+      "id": "d72db3eb-54a1-45d7-8b3c-650e5a920441",
+      "name": "Gestionar errores",
+      "nodeIds": [
+        "c9ea23ae-ce0c-42ab-bfa4-7a7f1d114e9a",
+        "f1e68b59-cf9a-4649-a242-a2b390fbd9c8"
+      ],
+      "description": "Si falla la IA, la base de datos o el envío, avisa por email al administrador con el detalle del error"
+    }
+  ],
+  "id": "kgOOnpnVuChuJWNQ",
+  "tags": []
+}

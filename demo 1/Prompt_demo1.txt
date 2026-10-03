@@ -1,0 +1,193 @@
+Quiero construir un workflow de búsqueda de perfiles profesionales a partir de peticiones recibidas por email.
+
+OBJETIVO
+
+Cuando llegue un email solicitando uno o varios perfiles profesionales, el workflow debe:
+
+1. Leer el email.
+2. Analizar la petición mediante IA.
+3. Convertir la petición en criterios estructurados.
+4. Buscar candidatos en una base de datos PostgreSQL alojada en Neon.
+5. Filtrar los candidatos según los requisitos.
+6. Utilizar IA para preparar una respuesta profesional.
+7. Enviar un email de respuesta al remitente con los perfiles encontrados.
+
+FLUJO
+
+EMAIL → IA → POSTGRESQL / NEON → FILTRADO → IA → EMAIL
+
+--------------------------------------------------
+1. RECIBIR EMAIL
+--------------------------------------------------
+
+Utiliza un trigger de email para detectar nuevos mensajes.
+
+Necesitamos:
+- remitente
+- asunto
+- cuerpo del email
+
+Ejemplo de email:
+
+Asunto:
+Necesitamos perfil para proyecto
+
+Cuerpo:
+
+"Hola,
+
+Necesitamos para un proyecto industrial una persona con experiencia en Python y bases de datos. Necesitamos que pueda incorporarse lo antes posible y preferiblemente que esté en Madrid.
+
+Gracias."
+
+--------------------------------------------------
+2. ANALIZAR LA PETICIÓN
+--------------------------------------------------
+
+Utiliza un nodo de IA para analizar el contenido del email.
+
+La IA debe convertir la petición en un JSON estructurado con:
+
+{
+  "role": "...",
+  "required_skills": [],
+  "minimum_experience": null,
+  "location": null,
+  "availability": "immediate",
+  "number_of_profiles": 1
+}
+
+Por ejemplo, para el email anterior:
+
+{
+  "role": "Backend Developer",
+  "required_skills": ["Python", "SQL"],
+  "minimum_experience": null,
+  "location": "Madrid",
+  "availability": "immediate",
+  "number_of_profiles": 1
+}
+
+IMPORTANTE:
+
+- No inventar requisitos que no aparezcan en el email.
+- Si un requisito no está especificado, dejarlo como null.
+- Las skills deben conservarse como criterios independientes.
+- Si la petición es ambigua, marcar el campo correspondiente como null.
+
+--------------------------------------------------
+3. BUSCAR EN NEON
+--------------------------------------------------
+
+Conectar mediante PostgreSQL con una base de datos Neon.
+
+Utilizar la tabla:
+
+employees
+
+Campos:
+
+- employee_id
+- name
+- role
+- skills
+- years_experience
+- availability_date
+- availability_status
+- location
+- current_project
+
+Buscar candidatos utilizando los criterios obtenidos de la IA.
+
+Las skills están almacenadas como un array PostgreSQL TEXT[].
+
+Un candidato debe cumplir TODAS las skills obligatorias.
+
+También comprobar:
+
+- role, si está especificado;
+- minimum_experience, si está especificado;
+- location, si está especificado;
+- availability_status;
+- availability_date.
+
+No considerar automáticamente disponible a una persona cuyo availability_status sea "busy".
+
+--------------------------------------------------
+4. RESULTADO DE LA BÚSQUEDA
+--------------------------------------------------
+
+Devolver como máximo 5 candidatos.
+
+Ordenarlos por:
+
+1. Cumplimiento de todos los requisitos.
+2. Disponibilidad.
+3. Años de experiencia.
+
+No inventar candidatos ni información.
+
+Si no hay candidatos que cumplan todos los requisitos, devolver:
+
+{
+  "matches": [],
+  "reason": "No se ha encontrado ningún perfil que cumpla todos los requisitos."
+}
+
+--------------------------------------------------
+5. REDACTAR EL EMAIL
+--------------------------------------------------
+
+Utilizar IA para redactar una respuesta profesional al remitente.
+
+El email debe:
+
+- agradecer la petición;
+- indicar cuántos perfiles se han encontrado;
+- presentar los candidatos encontrados;
+- incluir nombre, rol, experiencia, skills relevantes y disponibilidad;
+- explicar brevemente por qué encajan;
+- no inventar información.
+
+Ejemplo:
+
+Hola,
+
+Hemos encontrado 3 perfiles que encajan con los requisitos solicitados:
+
+1. Ana López
+   Backend Developer · 5 años de experiencia
+   Python, SQL, PostgreSQL, APIs
+   Disponible desde el 1 de octubre.
+   Madrid.
+
+2. ...
+
+Si quieres, podemos ampliar la búsqueda o revisar otros perfiles.
+
+Un saludo.
+
+--------------------------------------------------
+6. ENVÍO
+--------------------------------------------------
+
+Enviar el email utilizando el mismo remitente que realizó la petición.
+
+Mantener el asunto original con el prefijo:
+
+"Re: "
+
+--------------------------------------------------
+REGLAS IMPORTANTES
+--------------------------------------------------
+
+- La IA interpreta el email, pero NO debe inventar datos de empleados.
+- La base de datos es la fuente de verdad de los perfiles.
+- Las comprobaciones de skills, experiencia y disponibilidad deben realizarse de forma determinista.
+- Si no hay candidatos adecuados, decirlo claramente.
+- No enviar información que no exista en la base de datos.
+- Añadir manejo de errores.
+- El workflow debe ser visual y fácil de explicar durante una demostración.
+- Añadir nombres claros a todos los nodos.
+
+Construye el workflow completo en n8n y explica brevemente la función de cada nodo.

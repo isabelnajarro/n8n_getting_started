@@ -1,0 +1,859 @@
+{
+  "name": "Gestión automática de solicitudes de vacaciones",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "maxResults": 1,
+        "filters": {
+          "q": "vacaciones -from:me",
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "414c5db5-9c39-4d4a-8f96-49a0653e758c",
+      "name": "Nueva solicitud de vacaciones",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        112
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "message_id",
+              "type": "string",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "id": "a2",
+              "name": "thread_id",
+              "type": "string",
+              "value": "={{ $json.threadId }}"
+            },
+            {
+              "id": "a3",
+              "name": "sender_email",
+              "type": "string",
+              "value": "={{ ($json.from?.value?.[0]?.address || \"\").trim().toLowerCase() }}"
+            },
+            {
+              "id": "a4",
+              "name": "sender_name",
+              "type": "string",
+              "value": "={{ $json.from?.value?.[0]?.name || \"\" }}"
+            },
+            {
+              "id": "a5",
+              "name": "subject",
+              "type": "string",
+              "value": "={{ $json.subject || \"\" }}"
+            },
+            {
+              "id": "a6",
+              "name": "body",
+              "type": "string",
+              "value": "={{ ($json.text || \"\").slice(0, 5000) }}"
+            },
+            {
+              "id": "a7",
+              "name": "received_at",
+              "type": "string",
+              "value": "={{ $json.date || $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6be1a9d7-0873-46a0-b0f2-1320e0af2d5f",
+      "name": "Normalizar correo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "text": "=Fecha de recepción del correo: {{ $json.received_at }}\nRemitente: {{ $json.sender_name }} <{{ $json.sender_email }}>\nAsunto: {{ $json.subject }}\n\nCuerpo:\n{{ $json.body }}",
+        "schemaType": "manual",
+        "inputSchema": "{\"type\":\"object\",\"properties\":{\"employee_name\":{\"type\":\"string\",\"description\":\"Nombre del remitente si aparece en el correo; cadena vacía si no\"},\"start_date\":{\"type\":\"string\",\"description\":\"Fecha de inicio de vacaciones en formato YYYY-MM-DD; cadena vacía si no se puede determinar\"},\"end_date\":{\"type\":\"string\",\"description\":\"Fecha de fin de vacaciones en formato YYYY-MM-DD; cadena vacía si no se puede determinar\"},\"dates_certain\":{\"type\":\"boolean\",\"description\":\"true solo si ambas fechas se determinan sin ambigüedad\"},\"is_vacation_request\":{\"type\":\"boolean\",\"description\":\"true si el correo es una solicitud de vacaciones\"},\"notes\":{\"type\":\"string\",\"description\":\"Explicación breve de cualquier ambigüedad o dato faltante\"}},\"required\":[\"employee_name\",\"start_date\",\"end_date\",\"dates_certain\",\"is_vacation_request\",\"notes\"]}",
+        "options": {
+          "systemPromptTemplate": "Eres un extractor de datos de solicitudes de vacaciones. Extrae solo lo que el correo dice explícitamente; no inventes nada. Las fechas en formato DD/MM/AAAA son día/mes/año (formato español). Si el año no se indica, usa el año de la fecha de recepción del correo, o el siguiente si esas fechas ya habrían pasado. Si falta una de las dos fechas, el mes no está claro, las fechas son contradictorias o el texto es vago (p. ej. \"la semana que viene\", \"a finales de mes\"), deja las fechas vacías que no puedas determinar y pon dates_certain=false explicando el motivo en notes."
+        }
+      },
+      "id": "b362fae4-f3e8-402a-a70e-0ac819c4b167",
+      "name": "Extraer datos de la solicitud",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "913341cf-9bd8-4778-9d64-18b9a3f4247e",
+      "name": "Modelo extracción",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        528,
+        336
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT employee_id, name, email, role, skills, current_project, availability_status FROM employees WHERE lower(email) = lower($1) LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [ $(\"Normalizar correo\").first().json.sender_email || \"__sin_email__\" ] }}"
+        }
+      },
+      "id": "06a289a7-3b23-4784-aa25-9d7348998f13",
+      "name": "Buscar empleado por email",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        832,
+        128
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const emp = $input.first().json || {};\nconst ext = $('Extraer datos de la solicitud').first().json.output || {};\nconst PROJECT = 'proyecto atlas';\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction toIso(v) {\n  if (!v) return null;\n  const s = String(v).trim();\n  let m = s.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})/);\n  if (m) return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);\n  m = s.match(/^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})$/);\n  if (m) return m[3] + '-' + pad(+m[2]) + '-' + pad(+m[1]);\n  return null;\n}\n\nconst found = emp.employee_id !== undefined && emp.employee_id !== null && !!emp.email;\nconst isAtlas = found && String(emp.current_project || '').trim().toLowerCase() === PROJECT;\nconst reqStart = toIso(ext.start_date);\nconst reqEnd = toIso(ext.end_date);\nconst datesOk = ext.dates_certain === true && !!reqStart && !!reqEnd && reqStart <= reqEnd;\n\nlet overlaps = false;\nlet restrictedStart = null;\nlet restrictedEnd = null;\nif (isAtlas && datesOk) {\n  const y1 = Number(reqStart.slice(0, 4));\n  const y2 = Number(reqEnd.slice(0, 4));\n  for (let y = y1; y <= y2; y++) {\n    const rs = y + '-12-01';\n    const re = y + '-12-18';\n    if (reqStart <= re && reqEnd >= rs) { overlaps = true; restrictedStart = rs; restrictedEnd = re; break; }\n  }\n}\n\nreturn [{ json: {\n  ...emp,\n  atlas_restriction: {\n    applies: isAtlas && overlaps,\n    is_atlas_member: isAtlas,\n    employee_found: found,\n    dates_ok: datesOk,\n    requested_start: reqStart,\n    requested_end: reqEnd,\n    restricted_start: restrictedStart,\n    restricted_end: restrictedEnd,\n  },\n} }];"
+      },
+      "id": "c7019d35-4c36-4786-a587-0bf99a2d0b53",
+      "name": "Comprobar restricción Proyecto Atlas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.atlas_restriction.applies }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6a83c93a-2933-4de3-8d0d-b9ccad508314",
+      "name": "¿Fechas bloqueadas por Proyecto Atlas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1296,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "decision",
+              "type": "string",
+              "value": "rejected"
+            },
+            {
+              "id": "r2",
+              "name": "reason",
+              "type": "string",
+              "value": "atlas_restricted_period"
+            },
+            {
+              "id": "r3",
+              "name": "employee",
+              "type": "string",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "id": "r4",
+              "name": "email",
+              "type": "string",
+              "value": "={{ $json.email }}"
+            },
+            {
+              "id": "r5",
+              "name": "current_project",
+              "type": "string",
+              "value": "={{ $json.current_project }}"
+            },
+            {
+              "id": "r6",
+              "name": "requested_start",
+              "type": "string",
+              "value": "={{ $json.atlas_restriction.requested_start }}"
+            },
+            {
+              "id": "r7",
+              "name": "requested_end",
+              "type": "string",
+              "value": "={{ $json.atlas_restriction.requested_end }}"
+            },
+            {
+              "id": "r8",
+              "name": "restricted_start",
+              "type": "string",
+              "value": "={{ $json.atlas_restriction.restricted_start }}"
+            },
+            {
+              "id": "r9",
+              "name": "restricted_end",
+              "type": "string",
+              "value": "={{ $json.atlas_restriction.restricted_end }}"
+            },
+            {
+              "id": "r10",
+              "name": "message_id",
+              "type": "string",
+              "value": "={{ $(\"Normalizar correo\").first().json.message_id }}"
+            },
+            {
+              "id": "r11",
+              "name": "reply_text",
+              "type": "string",
+              "value": "=Hola {{ $json.name }}:\n\nHemos recibido tu solicitud de vacaciones del {{ $json.atlas_restriction.requested_start.split(\"-\").reverse().join(\"/\") }} al {{ $json.atlas_restriction.requested_end.split(\"-\").reverse().join(\"/\") }}.\n\nLamentamos informarte de que tu solicitud ha sido rechazada. Las fechas solicitadas coinciden con el periodo en el que no se permiten vacaciones en Proyecto Atlas, del {{ $json.atlas_restriction.restricted_start.split(\"-\").reverse().join(\"/\") }} al {{ $json.atlas_restriction.restricted_end.split(\"-\").reverse().join(\"/\") }} (ambos días incluidos), por necesidades del proyecto, que permanecerá operativo durante ese periodo.\n\nSi lo deseas, puedes enviar una nueva solicitud con fechas fuera de ese periodo.\n\nUn saludo,\nEquipo de RRHH (mensaje automático)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "554add74-2f96-4719-bbdc-848c736c13de",
+      "name": "Preparar rechazo Proyecto Atlas",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1376,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $json.message_id }}",
+        "emailType": "text",
+        "message": "={{ $json.reply_text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyToSenderOnly": true
+        }
+      },
+      "id": "bfbeaf1f-afbe-4088-aea9-515b19fbbf5d",
+      "name": "Responder rechazo Proyecto Atlas",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        320
+      ],
+      "webhookId": "aad8a456-4b09-410f-9f80-72bbde75552e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $(\"Preparar rechazo Proyecto Atlas\").first().json.message_id }}"
+      },
+      "id": "dee2a57d-c323-4135-80ae-ed5b7fd6c262",
+      "name": "Marcar rechazo como leído",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1824,
+        320
+      ],
+      "webhookId": "51b7c1c8-0980-4267-bd58-39b677db8c26",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT employee_id, name, email, role, current_project, availability_status FROM employees WHERE lower(role) = lower($1) AND lower(email) <> lower($2) ORDER BY name;",
+        "options": {
+          "queryReplacement": "={{ [ $json.role || \"__sin_perfil__\", $json.email || $(\"Normalizar correo\").first().json.sender_email || \"__sin_email__\" ] }}"
+        }
+      },
+      "id": "beebd2e7-f805-42ae-91c1-b705c47ed8b6",
+      "name": "Buscar compañeros mismo perfil",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1056,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PEGA_AQUI_LA_URL_DE_TU_GOOGLE_SHEET",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "PEGA_AQUI_LA_URL_DE_TU_GOOGLE_SHEET",
+          "mode": "url"
+        },
+        "options": {}
+      },
+      "id": "6ab68840-c75b-4219-b681-3fb283b90d5c",
+      "name": "Leer vacaciones Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1280,
+        320
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": null,
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Normalizar correo').first().json;\nconst ext = $('Extraer datos de la solicitud').first().json.output || {};\nconst empRaw = $('Buscar empleado por email').first().json || {};\nconst employee = (empRaw.employee_id !== undefined && empRaw.employee_id !== null && empRaw.email) ? empRaw : null;\nconst ownEmail = String(employee ? employee.email : req.sender_email || '').trim().toLowerCase();\n\nconst peers = employee\n  ? $('Buscar compañeros mismo perfil').all().map(i => i.json)\n      .filter(p => p && p.email && String(p.email).trim().toLowerCase() !== ownEmail)\n  : [];\nconst rows = $('Leer vacaciones Google Sheets').all().map(i => i.json).filter(r => r && Object.keys(r).length > 0);\n\nfunction pad(n) { return String(n).padStart(2, '0'); }\nfunction valid(y, mo, d) {\n  const dt = new Date(Date.UTC(y, mo - 1, d));\n  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;\n  return y + '-' + pad(mo) + '-' + pad(d);\n}\nfunction toIso(v) {\n  if (v === null || v === undefined || v === '') return null;\n  if (typeof v === 'number' && isFinite(v)) {\n    const d = new Date(Math.round((v - 25569) * 86400000));\n    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());\n  }\n  const s = String(v).trim();\n  let m = s.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})/);\n  if (m) return valid(+m[1], +m[2], +m[3]);\n  m = s.match(/^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})$/);\n  if (m) return valid(+m[3], +m[2], +m[1]);\n  if (/^\\d+(\\.\\d+)?$/.test(s)) return toIso(Number(s));\n  return null;\n}\nfunction statusClass(s) {\n  const v = String(s || '').trim().toLowerCase();\n  if (['approved', 'aprobado', 'aprobada', 'aprobadas'].includes(v)) return 'active';\n  if (['pending', 'pendiente'].includes(v)) return 'active';\n  if (['rejected', 'rechazado', 'rechazada', 'cancelled', 'canceled', 'cancelado', 'cancelada'].includes(v)) return 'ignored';\n  return 'unknown';\n}\n\nconst reqStart = toIso(ext.start_date);\nconst reqEnd = toIso(ext.end_date);\nconst datesOk = ext.dates_certain === true && !!reqStart && !!reqEnd && reqStart <= reqEnd;\n\nconst peerResults = peers.map(p => {\n  const pEmail = String(p.email).trim().toLowerCase();\n  const own = rows.filter(r => String(r.email || '').trim().toLowerCase() === pEmail);\n  const conflicts = [];\n  const ambiguous = [];\n  for (const r of own) {\n    const cls = statusClass(r.status);\n    if (cls === 'ignored') continue;\n    const s = toIso(r.start_date);\n    const e = toIso(r.end_date);\n    if (!s || !e || s > e) { ambiguous.push({ row: r, reason: 'fechas no válidas en la hoja de vacaciones' }); continue; }\n    if (!datesOk) continue;\n    const overlaps = s <= reqEnd && e >= reqStart;\n    if (!overlaps) continue;\n    if (cls === 'unknown') { ambiguous.push({ row: r, reason: 'estado desconocido: ' + r.status }); continue; }\n    conflicts.push({\n      employee: p.name, email: p.email, start_date: s, end_date: e, status: String(r.status).trim().toLowerCase(),\n    });\n  }\n  let coverageStatus = 'available';\n  if (conflicts.length > 0) coverageStatus = 'on_vacation_overlap';\n  else if (ambiguous.length > 0) coverageStatus = 'ambiguous';\n  return {\n    employee_id: p.employee_id, name: p.name, email: p.email, role: p.role,\n    current_project: p.current_project, availability_status: p.availability_status,\n    coverage_status: coverageStatus, conflicts, ambiguous,\n  };\n});\n\nreturn [{ json: {\n  request: req,\n  extraction: ext,\n  employee_found: !!employee,\n  employee,\n  requested_start: reqStart,\n  requested_end: reqEnd,\n  dates_ok: datesOk,\n  peers: peerResults,\n  excel_rows_read: rows.length,\n  excel_rows_raw: rows,\n} }];"
+      },
+      "id": "dc51ecbd-3cf7-4b0a-8603-39ab4138efb9",
+      "name": "Comparar fechas y detectar conflictos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $input.first().json;\nconst emp = a.employee;\nconst peers = a.peers || [];\nconst conflicts = peers.flatMap(p => p.conflicts);\nconst available = peers.filter(p => p.coverage_status === 'available');\nconst ambiguousPeers = peers.filter(p => p.coverage_status === 'ambiguous');\n\nlet decision;\nlet reason;\nlet coverage = false;\n\nif (!a.employee_found) {\n  decision = 'manual_review';\n  reason = 'employee_not_found';\n} else if (!a.dates_ok) {\n  decision = 'missing_information';\n  reason = 'dates_not_determined';\n} else if (!emp.role || !String(emp.role).trim()) {\n  decision = 'manual_review';\n  reason = 'profile_missing';\n} else if (peers.length === 0) {\n  decision = 'manual_review';\n  reason = 'no_same_profile_employees';\n} else if (available.length > 0) {\n  decision = 'approved';\n  reason = 'coverage_available';\n  coverage = true;\n} else if (ambiguousPeers.length > 0) {\n  decision = 'manual_review';\n  reason = 'ambiguous_vacation_data';\n} else {\n  decision = 'manual_review';\n  reason = 'coverage_conflict';\n}\n\nreturn [{ json: {\n  employee: emp ? emp.name : (a.extraction.employee_name || a.request.sender_name || ''),\n  email: emp ? emp.email : a.request.sender_email,\n  profile: emp ? emp.role : null,\n  requested_start: a.requested_start,\n  requested_end: a.requested_end,\n  same_profile_employees: peers.map(p => ({ name: p.name, email: p.email, coverage_status: p.coverage_status })),\n  conflicts,\n  coverage_available: coverage,\n  available_coverage_employees: available.map(p => p.name),\n  ambiguous_records: ambiguousPeers.map(p => ({ name: p.name, details: p.ambiguous })),\n  decision,\n  reason,\n  extraction_notes: a.extraction.notes || '',\n  message_id: a.request.message_id,\n  thread_id: a.request.thread_id,\n  original_subject: a.request.subject,\n  original_body: a.request.body,\n  audit: {\n    employee_record: emp,\n    same_profile_detail: peers,\n    extraction: a.extraction,\n    excel_rows_read: a.excel_rows_read,\n    decided_at: new Date().toISOString(),\n  },\n} }];"
+      },
+      "id": "a7a815b5-5d66-4611-8f28-3b44ed7bbce3",
+      "name": "Determinar cobertura y decisión",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Resultado de la validación (JSON):\n{{ JSON.stringify({ employee: $json.employee, email: $json.email, profile: $json.profile, requested_start: $json.requested_start, requested_end: $json.requested_end, same_profile_employees: $json.same_profile_employees, conflicts: $json.conflicts, coverage_available: $json.coverage_available, decision: $json.decision, reason: $json.reason, extraction_notes: $json.extraction_notes }, null, 2) }}\n\nCorreo original del empleado:\nAsunto: {{ $json.original_subject }}\n{{ $json.original_body }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Redactas respuestas por correo, en español, claras y profesionales, a solicitudes de vacaciones. Usa EXCLUSIVAMENTE los datos del JSON; no inventes empleados, perfiles, fechas, vacaciones ni reglas. Escribe solo el cuerpo del correo en texto plano (sin asunto, sin markdown), con saludo y firma \"Equipo de RRHH (mensaje automático)\". Muestra las fechas en formato DD/MM/AAAA.\n\nSegún \"decision\":\n- approved: indica que la solicitud cumple los criterios y puede aprobarse automáticamente; resume las fechas solicitadas, el perfil del empleado y que existe cobertura disponible dentro del mismo perfil. No afirmes que las vacaciones están oficialmente aprobadas ni registradas: se trata de una validación automática de cobertura.\n- manual_review con reason coverage_conflict: indica que no puede aprobarse automáticamente porque hay un conflicto de cobertura; indica fechas, perfil, qué personas del mismo perfil tienen vacaciones coincidentes (con sus fechas, según \"conflicts\") y que la solicitud queda pendiente de revisión.\n- manual_review con reason employee_not_found: indica que no se ha podido identificar al empleado con su dirección de correo y que la solicitud pasa a revisión manual. No menciones perfiles ni compañeros.\n- manual_review con otro reason (no_same_profile_employees, profile_missing, ambiguous_vacation_data): explica brevemente el motivo sin inventar detalles y que la solicitud queda pendiente de revisión manual.\n- missing_information: indica que no se han podido determinar con seguridad las fechas y pide al empleado la fecha exacta de inicio y de fin en formato DD/MM/AAAA. No tomes ninguna decisión sobre la solicitud."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "f455e4a4-798f-46b2-b639-1d14372ff07a",
+      "name": "Redactar respuesta",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2000,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "b39d08a5-f91d-46f0-be3d-4c313f1337a3",
+      "name": "Modelo redacción",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2080,
+        352
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $(\"Determinar cobertura y decisión\").first().json.message_id }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyToSenderOnly": true
+        }
+      },
+      "id": "5c78c52c-1a99-4b2c-928c-65ba3a119d37",
+      "name": "Responder al empleado",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2352,
+        128
+      ],
+      "webhookId": "7ca502eb-f6e9-4d27-af93-fc37aeb5553f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $(\"Determinar cobertura y decisión\").first().json.message_id }}"
+      },
+      "id": "5d41ce73-ab7d-4443-b0ad-feb84c7c0e38",
+      "name": "Marcar solicitud como leída",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2576,
+        128
+      ],
+      "webhookId": "51a019fa-f08c-4310-bd16-c72ade723c0f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "b4b89df5-4953-4bd4-85a1-c1908aae2d20",
+      "name": "Enviar aviso al equipo Proyecto Atlas",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT employee_id, name, email, role, current_project FROM employees WHERE lower(trim(current_project)) = 'proyecto atlas' AND email IS NOT NULL AND trim(email) <> '' ORDER BY name;",
+        "options": {}
+      },
+      "id": "1b3cb2c8-e94b-44c8-93dd-eaddcca472e9",
+      "name": "Buscar equipo Proyecto Atlas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        272,
+        656
+      ],
+      "credentials": {
+        "postgres": {
+          "id": null,
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Proyecto Atlas: periodo sin vacaciones del 1 al 18 de diciembre de {{ $now.month === 12 && $now.day > 18 ? $now.year + 1 : $now.year }}",
+        "emailType": "text",
+        "message": "=Hola {{ $json.name }}:\n\nTe escribimos para informarte de una restricción de vacaciones por necesidades de Proyecto Atlas.\n\nEl proyecto permanecerá operativo durante el periodo comprendido entre el 1 y el 18 de diciembre de {{ $now.month === 12 && $now.day > 18 ? $now.year + 1 : $now.year }}, ambos días incluidos. Durante ese periodo no se podrán solicitar ni disfrutar vacaciones.\n\nEsta restricción afecta a todas las personas asignadas actualmente a Proyecto Atlas. Las solicitudes de vacaciones cuyas fechas coincidan, total o parcialmente, con ese periodo serán rechazadas automáticamente.\n\nTe recomendamos planificar tus vacaciones fuera de esas fechas. Si tienes cualquier duda, puedes contactar con el equipo de RRHH.\n\nGracias por tu colaboración.\n\nUn saludo,\nEquipo de RRHH",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "092346ad-2f2c-4293-97ed-2f9996222c50",
+      "name": "Enviar aviso de restricción",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        496,
+        656
+      ],
+      "webhookId": "a9c49063-2ad7-41e4-bd7d-567c280d405b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": null,
+          "name": "Gmail account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Nueva solicitud de vacaciones": {
+      "main": [
+        [
+          {
+            "node": "Normalizar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar correo": {
+      "main": [
+        [
+          {
+            "node": "Extraer datos de la solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer datos de la solicitud": {
+      "main": [
+        [
+          {
+            "node": "Buscar empleado por email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo extracción": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extraer datos de la solicitud",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar empleado por email": {
+      "main": [
+        [
+          {
+            "node": "Comprobar restricción Proyecto Atlas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprobar restricción Proyecto Atlas": {
+      "main": [
+        [
+          {
+            "node": "¿Fechas bloqueadas por Proyecto Atlas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Fechas bloqueadas por Proyecto Atlas?": {
+      "main": [
+        [
+          {
+            "node": "Preparar rechazo Proyecto Atlas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar compañeros mismo perfil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar rechazo Proyecto Atlas": {
+      "main": [
+        [
+          {
+            "node": "Responder rechazo Proyecto Atlas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder rechazo Proyecto Atlas": {
+      "main": [
+        [
+          {
+            "node": "Marcar rechazo como leído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar compañeros mismo perfil": {
+      "main": [
+        [
+          {
+            "node": "Leer vacaciones Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer vacaciones Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Comparar fechas y detectar conflictos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comparar fechas y detectar conflictos": {
+      "main": [
+        [
+          {
+            "node": "Determinar cobertura y decisión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determinar cobertura y decisión": {
+      "main": [
+        [
+          {
+            "node": "Redactar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al empleado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo redacción": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Redactar respuesta",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder al empleado": {
+      "main": [
+        [
+          {
+            "node": "Marcar solicitud como leída",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso al equipo Proyecto Atlas": {
+      "main": [
+        [
+          {
+            "node": "Buscar equipo Proyecto Atlas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar equipo Proyecto Atlas": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso de restricción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "b1e98447-6e15-4385-a8fe-a0cccd1eb1b2",
+  "nodeGroups": [
+    {
+      "id": "ddaf3d74-cff0-416d-a243-4b153a0633de",
+      "name": "Interpretar solicitud",
+      "nodeIds": [
+        "6be1a9d7-0873-46a0-b0f2-1320e0af2d5f",
+        "b362fae4-f3e8-402a-a70e-0ac819c4b167",
+        "913341cf-9bd8-4778-9d64-18b9a3f4247e"
+      ],
+      "description": "Toma el correo recibido, limpia remitente y texto, y la IA extrae nombre y fechas sin inventar datos"
+    },
+    {
+      "id": "052bc468-8097-4fa9-b39a-6c8f3d1f6a56",
+      "name": "Consultar datos del equipo",
+      "nodeIds": [
+        "06a289a7-3b23-4784-aa25-9d7348998f13",
+        "c7019d35-4c36-4786-a587-0bf99a2d0b53",
+        "6a83c93a-2933-4de3-8d0d-b9ccad508314"
+      ],
+      "description": "Identifica al empleado y su proyecto; si es de Proyecto Atlas y pide días del 1 al 18 de diciembre, se bloquea"
+    },
+    {
+      "id": "8d4fa980-8771-4d79-8440-6e3003885c10",
+      "name": "Rechazar por Proyecto Atlas",
+      "nodeIds": [
+        "554add74-2f96-4719-bbdc-848c736c13de",
+        "bfbeaf1f-afbe-4088-aea9-515b19fbbf5d",
+        "dee2a57d-c323-4135-80ae-ed5b7fd6c262"
+      ],
+      "description": "Decisión rejected: responde en el mismo hilo con las fechas pedidas y el periodo restringido, y marca el correo leído"
+    },
+    {
+      "id": "839a8cad-423b-4655-a3e0-e46e1e14e6a8",
+      "name": "Evaluar cobertura",
+      "nodeIds": [
+        "beebd2e7-f805-42ae-91c1-b705c47ed8b6",
+        "6ab68840-c75b-4219-b681-3fb283b90d5c",
+        "dc51ecbd-3cf7-4b0a-8603-39ab4138efb9",
+        "a7a815b5-5d66-4611-8f28-3b44ed7bbce3"
+      ],
+      "description": "Busca compañeros del mismo perfil y sus vacaciones, detecta solapamientos y decide aprobar, revisar o pedir datos"
+    },
+    {
+      "id": "a5a22d15-1748-4ff0-a9bf-31156a1c4c86",
+      "name": "Avisar al equipo Atlas",
+      "nodeIds": [
+        "1b3cb2c8-e94b-44c8-93dd-eaddcca472e9",
+        "092346ad-2f2c-4293-97ed-2f9996222c50"
+      ],
+      "description": "Ejecución manual: envía a cada persona asignada a Proyecto Atlas el aviso del periodo sin vacaciones (1–18 dic)"
+    },
+    {
+      "id": "d7fd70c1-bad7-4942-82ad-51312b2a3445",
+      "name": "Responder al empleado",
+      "nodeIds": [
+        "f455e4a4-798f-46b2-b639-1d14372ff07a",
+        "b39d08a5-f91d-46f0-be3d-4c313f1337a3",
+        "5c78c52c-1a99-4b2c-928c-65ba3a119d37",
+        "5d41ce73-ab7d-4443-b0ad-feb84c7c0e38"
+      ],
+      "description": "La IA redacta la respuesta según la decisión, se envía en el mismo hilo y el correo queda marcado como leído"
+    }
+  ],
+  "id": "vJuPJlWgDLHPGWls",
+  "tags": []
+}

@@ -1,0 +1,273 @@
+Crea un workflow de n8n para gestionar automáticamente solicitudes de vacaciones de empleados.
+
+OBJETIVO
+
+Cuando un empleado envíe un correo solicitando vacaciones, el workflow debe identificar al empleado por su dirección de correo, consultar su perfil profesional en una base de datos PostgreSQL/Neon, identificar qué otros empleados tienen el mismo perfil y consultar un archivo Excel con las vacaciones para comprobar si existe un conflicto de cobertura.
+
+El workflow debe terminar redactando y enviando una respuesta por correo al empleado indicando si sus vacaciones pueden aprobarse automáticamente o si necesitan revisión.
+
+FLUJO
+
+1. RECIBIR SOLICITUD POR EMAIL
+
+Utiliza un Gmail Trigger para detectar nuevos correos de solicitud de vacaciones.
+
+El correo puede tener textos como:
+
+"Hola, quiero solicitar vacaciones del 15/10/2026 al 22/10/2026."
+
+o:
+
+"Solicito vacaciones del 15 al 22 de octubre."
+
+Extrae:
+- email del remitente
+- nombre si está disponible
+- fechas de inicio y fin de las vacaciones
+- asunto
+- cuerpo del correo
+
+Si las fechas no pueden determinarse con seguridad, no tomes ninguna decisión automática y prepara una respuesta solicitando las fechas exactas.
+
+2. IDENTIFICAR AL EMPLEADO
+
+Utiliza PostgreSQL/Neon como fuente de verdad.
+
+Busca al empleado utilizando su dirección de correo electrónico.
+
+La tabla employees debe contener al menos:
+
+- employee_id
+- name
+- email
+- role
+- skills
+- current_project
+- availability_status
+
+Ejemplo:
+
+SELECT
+  employee_id,
+  name,
+  email,
+  role,
+  skills,
+  current_project
+FROM employees
+WHERE lower(email) = lower($1)
+LIMIT 1;
+
+No inventes nunca un empleado.
+
+Si el email no existe en la base de datos:
+- no continúes con la aprobación
+- redacta un correo indicando que no se ha podido identificar al empleado
+- solicita revisión manual.
+
+3. IDENTIFICAR EL PERFIL DEL EMPLEADO
+
+Una vez encontrado el empleado, utiliza su campo "role" como perfil profesional.
+
+Por ejemplo:
+
+Ana López → Python Developer
+
+No utilices únicamente el nombre para determinar el perfil.
+
+El perfil debe proceder de PostgreSQL.
+
+4. BUSCAR PERSONAS CON EL MISMO PERFIL
+
+Consulta PostgreSQL para encontrar otros empleados que tengan exactamente el mismo role/perfil.
+
+Ejemplo:
+
+SELECT
+  employee_id,
+  name,
+  email,
+  role,
+  current_project
+FROM employees
+WHERE lower(role) = lower($1)
+  AND lower(email) <> lower($2)
+ORDER BY name;
+
+Estos empleados son las personas que pueden proporcionar cobertura durante las vacaciones.
+
+5. CONSULTAR EL EXCEL DE VACACIONES
+
+Utiliza un nodo Excel/Spreadsheet para leer un archivo que contiene las vacaciones del equipo.
+
+El Excel tendrá como mínimo estas columnas:
+
+- email
+- employee_name
+- start_date
+- end_date
+- status
+
+Ejemplo:
+
+email | employee_name | start_date | end_date | status
+
+ana@empresa.com | Ana López | 2026-10-15 | 2026-10-22 | approved
+carlos@empresa.com | Carlos Martín | 2026-10-18 | 2026-10-20 | approved
+
+Considera únicamente vacaciones cuyo status sea:
+- approved
+- pending
+
+Ignora vacaciones rechazadas o canceladas.
+
+6. COMPROBAR SOLAPAMIENTOS
+
+Compara las fechas solicitadas por el empleado con las vacaciones de las personas que tienen el mismo perfil.
+
+Existe conflicto cuando dos periodos se solapan.
+
+Utiliza esta lógica:
+
+Hay solapamiento si:
+
+start_date_persona <= end_date_solicitud
+Y
+end_date_persona >= start_date_solicitud
+
+No consideres conflicto con las vacaciones del propio empleado.
+
+7. APLICAR LA REGLA DE NEGOCIO
+
+La regla principal es:
+
+Si existe al menos otra persona con el mismo perfil que NO está de vacaciones durante todo o parte del periodo solicitado, la solicitud puede aprobarse automáticamente.
+
+Si TODAS las personas con el mismo perfil están de vacaciones durante algún momento del periodo solicitado, existe un problema de cobertura y la solicitud debe pasar a revisión manual.
+
+IMPORTANTE:
+
+No significa simplemente comprobar si existe otra persona con el mismo perfil.
+
+Hay que comprobar la disponibilidad durante las fechas concretas solicitadas.
+
+Ejemplo:
+
+Perfil: Python Developer
+
+Ana solicita:
+15/10/2026 → 22/10/2026
+
+Carlos:
+18/10/2026 → 20/10/2026
+
+Laura:
+01/11/2026 → 05/11/2026
+
+Como Laura está disponible durante todo el periodo solicitado, no existe conflicto de cobertura y la solicitud puede aprobarse.
+
+Otro ejemplo:
+
+Ana solicita:
+15/10/2026 → 22/10/2026
+
+Carlos:
+15/10/2026 → 22/10/2026
+
+Laura:
+15/10/2026 → 22/10/2026
+
+Todos los empleados con el mismo perfil están de vacaciones durante el periodo.
+
+Resultado:
+NO aprobar automáticamente.
+Enviar a revisión manual.
+
+8. GENERAR RESULTADO ESTRUCTURADO
+
+Antes de redactar el email, genera un objeto estructurado con:
+
+{
+  "employee": "...",
+  "email": "...",
+  "profile": "...",
+  "requested_start": "...",
+  "requested_end": "...",
+  "same_profile_employees": [...],
+  "conflicts": [...],
+  "coverage_available": true/false,
+  "decision": "approved" | "manual_review" | "missing_information"
+}
+
+La decisión debe basarse únicamente en los datos obtenidos de PostgreSQL, el Excel y las fechas de la solicitud.
+
+No inventes información.
+
+9. REDACTAR RESPUESTA POR EMAIL
+
+Utiliza IA únicamente para redactar una respuesta clara y profesional.
+
+Si decision = "approved":
+
+Indica que la solicitud puede aprobarse automáticamente y resume:
+- fechas solicitadas
+- perfil del empleado
+- que existe cobertura disponible dentro del mismo perfil
+
+Si decision = "manual_review":
+
+Indica que la solicitud no puede aprobarse automáticamente porque existe un conflicto de cobertura.
+
+Indica:
+- fechas solicitadas
+- perfil
+- qué personas del mismo perfil tienen vacaciones coincidentes
+- que la solicitud queda pendiente de revisión
+
+No afirmes que las vacaciones están oficialmente aprobadas si el workflow solo ha realizado una validación automática.
+
+Si decision = "missing_information":
+
+Solicita al empleado la información que falta.
+
+10. ENVIAR RESPUESTA
+
+Utiliza Gmail para responder al mismo remitente que realizó la solicitud.
+
+Conserva el contexto del correo original y utiliza un asunto como:
+
+"Re: [asunto original]"
+
+REGLAS IMPORTANTES
+
+- PostgreSQL/Neon es la fuente de verdad para identificar empleados y perfiles.
+- El Excel es la fuente de verdad para las vacaciones registradas.
+- La IA interpreta el correo y redacta la respuesta.
+- La IA NO debe inventar empleados, perfiles, vacaciones ni reglas.
+- La lógica de solapamiento debe ejecutarse mediante reglas deterministas.
+- No apruebes vacaciones si no existe información suficiente.
+- No apruebes automáticamente si no existe ninguna persona alternativa con el mismo perfil.
+- No consideres al propio empleado como cobertura.
+- No consideres vacaciones canceladas o rechazadas como conflictos.
+- Si existen datos ambiguos, deriva a revisión manual.
+- Mantén todos los datos originales disponibles para poder explicar posteriormente por qué se tomó la decisión.
+
+ESTRUCTURA RECOMENDADA DEL WORKFLOW
+
+Gmail Trigger
+↓
+IA - Extraer fechas y solicitud
+↓
+PostgreSQL - Buscar empleado por email
+↓
+PostgreSQL - Buscar compañeros con mismo perfil
+↓
+Excel - Leer vacaciones
+↓
+Code - Comparar fechas y detectar conflictos
+↓
+Code - Determinar cobertura y decisión
+↓
+IA - Redactar respuesta
+↓
+Gmail - Enviar respuesta

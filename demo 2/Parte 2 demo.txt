@@ -1,0 +1,19 @@
+Necesito que añadas una nueva regla de negocio al workflow.
+
+El proyecto permanecerá cerrado durante la semana del **14 al 18 de diciembre**. Por este motivo, **cualquier solicitud de vacaciones cuyo periodo comience a partir del 1 de diciembre deberá ser rechazada automáticamente**, independientemente de la disponibilidad del resto del equipo.
+
+Esta regla debe evaluarse **antes de comprobar la disponibilidad y los posibles conflictos de vacaciones**, y debe tener prioridad sobre el resto de reglas de aprobación.
+
+Cuando una solicitud sea rechazada por esta regla:
+
+1. No continúes con la comprobación de disponibilidad del equipo.
+2. Marca la solicitud como `rejected`.
+3. Genera automáticamente un correo al empleado explicando de forma clara que la solicitud ha sido rechazada porque el proyecto permanecerá cerrado durante el periodo indicado.
+4. Incluye en el correo las fechas solicitadas y el motivo del rechazo.
+5. Mantén un tono profesional y claro.
+
+El correo podría indicar, por ejemplo:
+
+"Tu solicitud de vacaciones del [fecha_inicio] al [fecha_fin] ha sido rechazada porque el proyecto permanecerá cerrado durante el periodo establecido y no se permiten solicitudes de vacaciones que comiencen a partir del 1 de diciembre."
+
+El resto de solicitudes debe seguir utilizando las reglas actuales de comprobación de perfil, equipo, vacaciones y cobertura.
